@@ -1,49 +1,88 @@
-class HttpContent:
-    def __init__(self, type, version, header, body):
-        self.type = type # El tipo puede ser o RequestHttp o ResponseHttp
-        self.version = version
-        self.header = header
-        self.body = body
-        
-
-
 class RequestHttp:
-    def __init__(self, method, route):
-        self.method = method
-        self.route = route
+    def __init__(self, method: str, route: str):
+        self.method: str = method
+        self.route: str = route
 
 
 class ResponseHttp:
-    def __init__(self, code, state):
-        self.code = code
-        self.state = state
+    def __init__(self, code: int, status: str):
+        self.code: int = code
+        self.status: str = status
+
+class HttpContent:
+    def __init__(self, type: RequestHttp|ResponseHttp, version: float, header: dict, body: str):
+        self.type: RequestHttp|ResponseHttp = type
+        self.version: float = version
+        self.header: dict = header
+        self.body: str = body       
 
 
-def parse_HTTP_message(http_message):
-        http_message_decoded = http_message.decode()
-        content = http_message_decoded.splitlines()
-        values_first_line = content[0].split()
-        header = content[1:-1]
-        body = content[-1]
-        http_structured = None
+def parse_HTTP_message(http_message: bytes):
+        http_message_decoded: str = http_message.decode()
 
+        head_body_separator_idx: int = http_message_decoded.find("\r\n\r\n")
+
+        header_section: str = http_message_decoded[:head_body_separator_idx]
+        body_section: str = http_message_decoded[head_body_separator_idx + 4:]
+
+
+        content: list[str] = header_section.splitlines()
+        values_first_line: list[str] = content[0].split()
+        header: dict[str, str] = {}
+
+        for line in content[1:]:
+            idx: int = line.find(":")
+            key: str = line[:idx]
+            value: str = line[idx + 1:].removesuffix("\r\n")
+            header[key] = value
+
+        body: str = body_section
+
+        # Caso Response
         if values_first_line[0][:4] == "HTTP":
-            version = float(values_first_line[0][5:8])
-            Http_response = ResponseHttp(values_first_line[1], values_first_line[2])
+            version: float = float(values_first_line[0][5:])
+            code: int = values_first_line[1]
+            status: str = values_first_line[2]
+            Http_response = ResponseHttp(code, status)
             http_structured = HttpContent(Http_response, version, header, body)
-        
+
+        # Caso Request
         else:
-             version = float(values_first_line[-1][-3:])
-             Http_request = RequestHttp(values_first_line[0], values_first_line[1])
-             http_structured = HttpContent(Http_request, version, header, body)
+            version: float = float(values_first_line[-1][5:])
+            method: str = values_first_line[0]
+            route: str = values_first_line[1]
+            Http_request = RequestHttp(method, route)
+            http_structured = HttpContent(Http_request, version, header, body)
 
         return http_structured
     
+def create_HTTP_message(http_structure: HttpContent):
 
+    if isinstance(http_structure.type, RequestHttp):
+        s = f"{http_structure.type.method} {http_structure.type.route} HTTP/{http_structure.version}\r\n"
+
+    elif isinstance(http_structure.type, ResponseHttp):
+        s = f"HTTP/{http_structure.version} {http_structure.type.code} {http_structure.type.status}\r\n"
+
+    for key, value in http_structure.header.items():
+        s += f"{key}:{value}\r\n"
+    s += (f"\r\n" + http_structure.body)
+
+    return s
 
 # Esto es solo para probar, lo puedes borrar si quieres
-texto = 'POST /login HTTP/1.1\r\n Host: www.ejemplo.com\r\n User-Agent: Mozilla/5.0\r\n Content-Type: application/json\r\n Content-Length: 36\r\n\r\n {"usuario":"admin","clave":"123456"}'
+texto = 'GET /login HTTP/1.1\r\nHost: www.ejemplo.com\r\nUser-Agent: Mozilla/5.0\r\nContent-Type:application/json\r\nContent-Length: 36\r\n\r\n{"usuario":"admin","clave":"123456"}'
 texto = texto.encode()
 
+texto_response = "HTTP/1.1 200 OK\r\nContent-Type:test/html;charset=UTF-8\r\nContent-Length:155\r\n\r\n{'Hola que tal'}"
+texto_response = texto_response.encode()
+
 http_de_texto = parse_HTTP_message(texto)
-print(http_de_texto.type.route)
+print(http_de_texto.type.method)
+print(create_HTTP_message(http_de_texto))
+
+http_de_texto_response = parse_HTTP_message(texto_response)
+print(create_HTTP_message(http_de_texto_response))
+
+print(texto_response.decode())
+print(texto_response.decode() == create_HTTP_message(http_de_texto_response))
