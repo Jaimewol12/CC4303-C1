@@ -13,7 +13,26 @@ def receive_http_request(connection_socket, buff_size):
     response_struct: ResponseHttp = ResponseHttp(200, 'OK')
     version: float = request_parsed.version
     header: dict = {'Content-Type': 'text/html; charset=UTF-8', 'Content-Lenght': '4'}
-    body: str = 'hola'
+    body_str = """<!DOCTYPE html>
+                <html lang="es">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Servidor Python</title>
+                    <style>
+                        body { font-family: sans-serif; background: #0f172a; color: white; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                        .card { background: #1e293b; padding: 2rem; border-radius: 10px; text-align: center; }
+                        h1 { color: #38bdf8; }
+                    </style>
+                </head>
+                <body>
+                    <div class="card">
+                        <h1>¡Conexión Exitosa!</h1>
+                        <p>Página servida desde tu socket TCP en Python.</p>
+                    </div>
+                </body>
+                </html>"""
+
+    body: bytes = body_str.encode()
     Http_response_struct: HttpContent = HttpContent(response_struct, version, header, body)
 
     # Parseamos el response de la estructura a formato HTTP
@@ -42,9 +61,9 @@ if __name__ == "__main__":
     while True:
         new_socket, new_socket_adress = server_socket.accept()
 
-        http_response = receive_http_request(server_socket, buff_size)
+        http_response = receive_http_request(new_socket, buff_size)
 
-        server_socket.send(http_response)
+        new_socket.send(http_response)
 
 
 
