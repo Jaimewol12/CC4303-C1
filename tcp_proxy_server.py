@@ -1,5 +1,7 @@
 import socket 
 from http_reader import *
+import os
+from dotenv import load_dotenv
 
 def receive_http_request(connection_socket, buff_size):
 
@@ -12,7 +14,6 @@ def receive_http_request(connection_socket, buff_size):
     # Crearemos un response para enviar al cliente
     response_struct: ResponseHttp = ResponseHttp(200, 'OK')
     version: float = request_parsed.version
-    header: dict = {'Content-Type': 'text/html; charset=UTF-8', 'Content-Lenght': '4'}
     body_str = """<!DOCTYPE html>
                 <html lang="es">
                 <head>
@@ -33,6 +34,8 @@ def receive_http_request(connection_socket, buff_size):
                 </html>"""
 
     body: bytes = body_str.encode()
+    header: dict = {'Content-Type': 'text/html; charset=UTF-8', 'Content-Lenght': str(len(body_str))}
+
     Http_response_struct: HttpContent = HttpContent(response_struct, version, header, body)
 
     # Parseamos el response de la estructura a formato HTTP
@@ -46,7 +49,10 @@ if __name__ == "__main__":
     buff_size = 1024
 
     # Creamos el socket no orientado a conexion
-    server_socket_adress = ('localhost', 5000) # Dirección
+    server_host: str = os.getenv('SERVER_HOST', 'localhost')
+    server_port: int = int(os.getenv('SERVER_PORT', 5000))
+
+    server_socket_adress: tuple = (server_host, server_port)
 
     print('Creando socket del servidor')
 

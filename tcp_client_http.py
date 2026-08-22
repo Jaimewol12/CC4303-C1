@@ -1,12 +1,19 @@
 import socket
 from http_reader import *
+import os
+from dotenv import load_dotenv
 # Creamos el cliente
 
 print("Creando cliente...")
 client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
 # Definimos las variables de entorno
-adress = ('localhost', 5000)
+load_dotenv()
+
+server_host: str = os.getenv('SERVER_HOST', 'localhost')
+server_port: int = int(os.getenv('SERVER_PORT', 5000))
+
+adress: tuple = (server_host, server_port)
 
 # Establecemos la conexión con el server
 client_socket.connect(adress)
@@ -17,7 +24,7 @@ method: str = 'GET'
 route: str = '/'
 request_HTTP_cient: RequestHttp = RequestHttp(method, route)
 version: float = 1.1
-header: dict = {'Host': 'localhost', 'Content-Type': 'text/html; charset=UTF-8'}
+header: dict = {'Host': 'localhost', 'Content-Type': 'text/html; charset=UTF-8', 'X-ElQuePregunta': 'Memo'}
 
 # Creamos la estructura
 http_request_strcut: HttpContent = HttpContent(request_HTTP_cient, version, header, body=b'')
