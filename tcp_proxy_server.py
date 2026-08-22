@@ -4,7 +4,16 @@ import os
 from dotenv import load_dotenv
 import json
 
-def receive_client_request(connection_socket: socket, buff_size: int): 
+def receive_client_request(connection_socket: socket, buff_size: int) -> HttpContent: 
+    """Recibe la solicitud HTTP cruda enviada por el cliente y la convierte a un objeto estructurado.
+
+    Args:
+        connection_socket (socket.socket): Socket TCP activo conectado al cliente.
+        buff_size (int): Tamaño del búfer de recepción en bytes.
+
+    Returns:
+        HttpContent: Objeto con la información de la petición HTTP (método, headers, body, etc.).
+    """
 
     # Recibimos el request HTTP del cliente
     http_request: bytes = connection_socket.recv(buff_size)
@@ -14,7 +23,16 @@ def receive_client_request(connection_socket: socket, buff_size: int):
 
     return request_parse
 
-def proxy_http_request(request_parsed: HttpContent, buff_size: int):
+def proxy_http_request(request_parsed: HttpContent, buff_size: int) -> bytes:
+    """Se conecta al servidor web de destino, reenvía la petición del cliente y obtiene su respuesta.
+
+    Args:
+        request_parsed (HttpContent): Petición del cliente parseada en objeto HttpContent.
+        buff_size (int): Tamaño del búfer para recibir la respuesta remota.
+
+    Returns:
+        bytes: Respuesta HTTP cruda en bytes enviada por el servidor de destino.
+    """
 
     # Obtenemos la dirección a la que se busca conectar
     request_adress: str = request_parsed.header.get('Host').lstrip()
@@ -35,7 +53,17 @@ def proxy_http_request(request_parsed: HttpContent, buff_size: int):
 
     return destiny_response
 
-def is_forbidden_adress(http_request: HttpContent, json_file: str):
+def is_forbidden_adress(http_request: HttpContent, json_file: str) -> bool:
+    """Evalúa si el dominio solicitado por el cliente se encuentra en la lista negra del JSON.
+
+    Args:
+        http_request (HttpContent): Petición HTTP del cliente parseada.
+        json_file (str): Ruta al archivo JSON de configuración ("filtro.json").
+
+    Returns:
+        bool: True si el dominio está bloqueado; False en caso contrario.
+    """
+    
     # Abrimos el archivo del filtro
     with open(json_file) as file:
         data = json.load(file)
@@ -54,10 +82,27 @@ def is_forbidden_adress(http_request: HttpContent, json_file: str):
         return False
 
 
-def proxy_adress_filter():
+def proxy_adress_filter() -> bytes:
+    """Construye una respuesta HTTP 403 Forbidden personalizada con un cuerpo HTML e imagen indicando el bloqueo.
+
+    Args:
+        version (float, optional): Versión del protocolo HTTP a responder. Por defecto 1.1.
+
+    Returns:
+        (bytes): Respuesta HTTP 403 completa en bytes lista para ser enviada al cliente.
+    """
     return
 
-def proxy_content_filter():
+def proxy_content_filter() -> bytes:
+    """Filtra el cuerpo de la respuesta HTTP sustituyendo palabras prohibidas según el mapa de reemplazos del JSON.
+
+    Args:
+        destiny_response (bytes): Respuesta cruda obtenida del servidor web remoto.
+        json_file (str): Ruta al archivo JSON con el diccionario de censura ("filtro.json").
+
+    Returns:
+        (bytes): Respuesta HTTP modificada y recompilada en bytes para entregar al cliente.
+    """
     return
 
 if __name__ == "__main__":
