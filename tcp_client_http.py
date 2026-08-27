@@ -22,15 +22,15 @@ client_socket.connect(adress)
 
 method: str = 'GET'
 route: str = '/'
-request_HTTP_cient: RequestHttp = RequestHttp(method, route)
+request_HTTP_client: RequestHttp = RequestHttp(method, route)
 version: float = 1.1
 header: dict = {'Host': 'localhost', 'Content-Type': 'text/html; charset=UTF-8', 'X-ElQuePregunta': 'Memo'}
 
 # Creamos la estructura
-http_request_strcut: HttpContent = HttpContent(request_HTTP_cient, version, header, body=b'')
+http_request_struct: HttpContent = HttpContent(request_HTTP_client, version, header, body=b'')
 
 # La parseamos a HTTP
-http_request_encoded: bytes = create_HTTP_message(http_request_strcut)
+http_request_encoded: bytes = create_HTTP_message(http_request_struct)
 
 # Se envia el request
 client_socket.send(http_request_encoded)

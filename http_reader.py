@@ -3,7 +3,7 @@ class RequestHttp:
 
     Attributes:
         method (str): Método HTTP utilizado en la petición (e.g., 'GET', 'POST').
-        route (str): Ruta o URI del recurso solicitado en el servidor (e.g., '/index.html').
+        route (str): Ruta o URL del recurso solicitado en el servidor (e.g., '/index.html').
     """
 
     def __init__(self, method: str, route: str):
@@ -39,25 +39,25 @@ class HttpContent:
     """Estructura contenedora que abstrae un mensaje HTTP completo (Request o Response).
 
     Attributes:
-        type (Union[RequestHttp, ResponseHttp]): Instancia que define si es una petición o respuesta.
+        type (RequestHttp | ResponseHttp): Instancia que define si es una petición o respuesta.
         version (float): Versión del protocolo HTTP utilizada (e.g., 1.1).
         header (dict[str, str]): Diccionario clave-valor con los encabezados HTTP.
-        body (Union[bytes, str]): Carga útil o cuerpo del mensaje HTTP.
+        body (bytes | str): Carga útil o cuerpo del mensaje HTTP.
     """
 
     def __init__(self, type: RequestHttp|ResponseHttp, version: float, header: dict[str, str], body: bytes):
         """Inicializa la estructura global del mensaje HTTP.
 
         Args:
-            type (Union[RequestHttp, ResponseHttp]): Objeto RequestHttp o ResponseHttp.
+            type (RequestHttp | ResponseHttp): Objeto RequestHttp o ResponseHttp.
             version (float): Versión del protocolo HTTP.
             header (dict[str, str]): Diccionario con las cabeceras HTTP.
-            body (Union[bytes, str]): Contenido o cuerpo del mensaje.
+            body (bytes | str): Contenido o cuerpo del mensaje.
         """
         self.type: RequestHttp|ResponseHttp = type
         self.version: float = version
         self.header: dict[str, str] = header
-        self.body: bytes = body       
+        self.body: bytes = body
 
 def parse_HTTP_message(http_message: bytes) -> HttpContent:
     """Analiza un flujo de bytes de un mensaje HTTP crudo y lo transforma en un objeto HttpContent.
@@ -112,17 +112,18 @@ def create_HTTP_message(http_structure: HttpContent) -> bytes:
         bytes: Secuencia binaria formateada según el estándar del protocolo HTTP.
     """
     if isinstance(http_structure.type, RequestHttp):
-        mensaje = f"{http_structure.type.method} {http_structure.type.route} HTTP/{http_structure.version}\r\n"
+       http_message = f"{http_structure.type.method} {http_structure.type.route} HTTP/{http_structure.version}\r\n"
 
     elif isinstance(http_structure.type, ResponseHttp):
-        mensaje = f"HTTP/{http_structure.version} {http_structure.type.code} {http_structure.type.status}\r\n"
+        http_message = f"HTTP/{http_structure.version} {http_structure.type.code} {http_structure.type.status}\r\n"
 
-    for key, value in http_structure.header.items():
-        mensaje += f"{key}:{value}\r\n"
-    mensaje += f"\r\n"
-    mensaje_codificado = mensaje.encode() + http_structure.body
+    for header_key, header_value in http_structure.header.items():
+        http_message += f"{header_key}:{header_value}\r\n"
 
-    return mensaje_codificado
+    http_message += f"\r\n"
+    http_message_codificado = http_message.encode() + http_structure.body
+
+    return http_message_codificado
 
 # Esto es solo para probar, lo puedes borrar si quieres
 texto = 'GET /login HTTP/1.1\r\nHost: www.ejemplo.com\r\nUser-Agent: Mozilla/5.0\r\nContent-Type:application/json\r\nContent-Length: 36\r\n\r\n{"usuario":"admin","clave":"123456"}'

@@ -9,7 +9,7 @@ def receive_client_request(connection_socket: socket, buff_size: int) -> HttpCon
 
     Args:
         connection_socket (socket.socket): Socket TCP activo conectado al cliente.
-        buff_size (int): Tamaño del búfer de recepción en bytes.
+        buff_size (int): Tamaño del buffer de recepción en bytes.
 
     Returns:
         HttpContent: Objeto con la información de la petición HTTP (método, headers, body, etc.).
@@ -148,7 +148,7 @@ if __name__ == "__main__":
             # Acá se debe filtrar el contenido según el proxy usando proxy_content_filter()
 
             
-            # Retornamos el response filrado al cliente
+            # Retornamos el response filtrado al cliente
             
 
 
