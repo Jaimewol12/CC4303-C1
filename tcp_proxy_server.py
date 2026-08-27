@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
     # Creamos el socket no orientado a conexion
     server_host: str = os.getenv('SERVER_HOST', 'localhost')
-    server_port: int = int(os.getenv('SERVER_PORT', 5000))
+    server_port: int = int(os.getenv('SERVER_PORT', 8000))
 
     server_socket_adress: tuple = (server_host, server_port)
 

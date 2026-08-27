@@ -11,7 +11,7 @@ client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 load_dotenv()
 
 server_host: str = os.getenv('SERVER_HOST', 'localhost')
-server_port: int = int(os.getenv('SERVER_PORT', 5000))
+server_port: int = int(os.getenv('SERVER_PORT', 8000))
 
 adress: tuple = (server_host, server_port)
 
