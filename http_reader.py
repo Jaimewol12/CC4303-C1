@@ -74,9 +74,12 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
     header_section: str = http_message[:head_body_separator_idx].decode()
     body: bytes = http_message[head_body_separator_idx + 4:]
 
-    content: list[str] = header_section.splitlines()
-    values_first_line: list[str] = content[0].split()
-    header: dict[str, str] = {}
+    try:
+        content: list[str] = header_section.splitlines()
+        values_first_line: list[str] = content[0].split()
+        header: dict[str, str] = {}
+    except:
+        print(content, "\n", http_message)
 
     for line in content[1:]:
         idx: int = line.find(":")

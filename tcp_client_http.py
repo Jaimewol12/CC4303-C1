@@ -24,7 +24,7 @@ method: str = 'GET'
 route: str = '/'
 request_HTTP_client: RequestHttp = RequestHttp(method, route)
 version: float = 1.1
-header: dict = {'Host': 'localhost', 'Content-Type': 'text/html; charset=UTF-8', 'X-ElQuePregunta': 'Memo'}
+header: dict = {'Host': 'www.dcc.uchile.cl', 'Content-Type': 'text/html; charset=UTF-8', 'X-ElQuePregunta': 'Memo'}
 
 # Creamos la estructura
 http_request_struct: HttpContent = HttpContent(request_HTTP_client, version, header, body=b'')

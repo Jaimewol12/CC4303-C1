@@ -34,22 +34,27 @@ def proxy_http_request(request_parsed: HttpContent, buff_size: int) -> bytes:
         bytes: Respuesta HTTP cruda en bytes enviada por el servidor de destino.
     """
 
+
     # Obtenemos la dirección a la que se busca conectar
     request_adress: str = request_parsed.header.get('Host').lstrip()
+    ip: str = request_adress.split(":")[0]
 
     # Creamos un nuevo socket para la conexión al destino
     new_socket_destiny = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Establecemos conexión con el servidor
-    destiny_server_adress: tuple = (request_adress, 80)
+    destiny_server_adress: tuple = (ip, 80)
     new_socket_destiny.connect(destiny_server_adress)
 
     # Enviamos la solicitud
+    request_parsed.header["X-ElQuePregunta"] = "Jaime Sepulveda"
     proxy_to_destiny_request: bytes = create_HTTP_message(request_parsed)
     new_socket_destiny.send(proxy_to_destiny_request)
 
     # Esperamos la respuesta
     destiny_response: bytes = new_socket_destiny.recv(buff_size)
+
+    new_socket_destiny.close()
 
     return destiny_response
 
@@ -71,13 +76,10 @@ def is_forbidden_adress(http_request: HttpContent, json_file: str) -> bool:
         # Obtenemos del JSON la lista de dominios prohibidos
         filtered_adresses: list = data.get('blocked')
 
-        # Obtenemos del request del cliente al dominio el cual quiere acceder
-        client_adress_requested: str = http_request.header.get('Host').lstrip()
-
         # Si ese Host request está dentro de la lista de los dominios prohibidos, entonces retorna True
         # Si no, retorna False
-        for adress in filtered_adresses:
-            if adress == client_adress_requested:
+        for blocked_adress in filtered_adresses:
+            if blocked_adress in http_request.type.route:
                 return True
         return False
 
@@ -91,9 +93,48 @@ def proxy_adress_filter() -> bytes:
     Returns:
         (bytes): Respuesta HTTP 403 completa en bytes lista para ser enviada al cliente.
     """
-    return
 
-def proxy_content_filter() -> bytes:
+    # Creamos la respuesta HTTP
+
+    response_HTTP_server: ResponseHttp = ResponseHttp(403, "Forbidden")
+    version: float = 1.1
+    header: dict[str, str] = {'Content-Type': 'text/html; charset=UTF-8'}
+    body: bytes = (b"""
+    <html>
+        <head>
+            <title>An Example</title>
+        </head>
+        <body>
+            <h1>Error 403</h1>
+            <img src="MaomaoTheCat.png">
+        </body>
+    </html>
+    """)
+    header['Content-Length'] = len(body)
+
+    http_response_struct: HttpContent = HttpContent(response_HTTP_server, version, header, body=body)
+
+    http_response_encoded: bytes = create_HTTP_message(http_response_struct)
+
+    return http_response_encoded
+
+def create_forbidden_image_response() -> bytes:
+
+    response_HTTP_server: ResponseHttp = ResponseHttp(403, "Forbidden")
+    version: float = 1.1
+    header: dict[str, str] = {'Content-Type': 'image/png'}
+
+    with open("MaomaoTheCat.png", "rb") as file:
+        body: bytes = file.read()
+
+    header['Content-Length'] = len(body)
+
+    http_response_struct: HttpContent = HttpContent(response_HTTP_server, version, header, body=body)
+    http_response_encoded: bytes = create_HTTP_message(http_response_struct)
+    return http_response_encoded
+    
+
+def proxy_content_filter(server_response: bytes, json_file: str) -> bytes:
     """Filtra el cuerpo de la respuesta HTTP sustituyendo palabras prohibidas según el mapa de reemplazos del JSON.
 
     Args:
@@ -103,7 +144,24 @@ def proxy_content_filter() -> bytes:
     Returns:
         (bytes): Respuesta HTTP modificada y recompilada en bytes para entregar al cliente.
     """
-    return
+
+    http_server_response: HttpContent = parse_HTTP_message(server_response)
+
+    # Abrimos el archivo del filtro
+    with open(json_file) as file:
+        data = json.load(file)
+
+    forbidden_words: list[dict[str, str]] = data["forbidden_words"]
+
+    for dic in forbidden_words:
+        for forbidden_word, new_word in dic.items():
+            http_server_response.body = http_server_response.body.replace(bytes(forbidden_word, "UTF-8"), bytes(new_word, "UTF-8"))
+
+    http_server_response.header["Content-Length"] = len(http_server_response.body)
+
+    filtered_server_response: bytes = create_HTTP_message(http_server_response)
+
+    return filtered_server_response
 
 if __name__ == "__main__":
 
@@ -113,6 +171,9 @@ if __name__ == "__main__":
     # Creamos el socket no orientado a conexion
     server_host: str = os.getenv('SERVER_HOST', 'localhost')
     server_port: int = int(os.getenv('SERVER_PORT', 8000))
+
+    print(f"El host del servidor es {server_host}")
+    print(f"El puerto del servidor es {server_port}")
 
     server_socket_adress: tuple = (server_host, server_port)
 
@@ -132,23 +193,50 @@ if __name__ == "__main__":
         #http_response = receive_http_request(new_socket, buff_size)
 
         # Recibimos la request del cliente
-        http_client_request = receive_client_request(new_socket, buff_size)
-        print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
+        http_client_request: HttpContent = receive_client_request(new_socket, buff_size)
+
+        if http_client_request.type.method == "CONNECT":
+            new_socket.close()
+            continue
 
         # Revisamos que no sea una página prohibida
-        if is_forbidden_adress(http_client_request, 'filtro.json'):
+        elif is_forbidden_adress(http_client_request, 'filtro.json'):
+            print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
             print("Proxy encontró dominio prohibido")
-            # Acá se debe aplicar proxy_adress_filter() y retornar el mensaje de error 403 con la fotito
+
+            http_response_encoded = proxy_adress_filter()
+            new_socket.send(http_response_encoded)
+
+            max_attempts_to_request_the_image: int = 10
+            i = 0
+            while i < max_attempts_to_request_the_image:
+                http_client_request = receive_client_request(new_socket, buff_size)
+
+                print(http_client_request.type.route)
+        
+                if "MaomaoTheCat.png" in http_client_request.type.route:
+
+                    print("Usuario pide la imagen MaomaoTheCat.png al servidor")
+                    http_response_encoded = create_forbidden_image_response()
+                    new_socket.send(http_response_encoded)
+                    print("Proxy envía la imagen MaomaoTheCat.png al usuario")
+                    break
+
+                i += 1
 
         else:
-            print("Proxy no encontró, pero hay que filtrar las palabras")
+            print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
+            print("Proxy no encontró dominio prohibido, pero hay que filtrar las palabras")
             # Ahora pasamos su request al Host (dirección de destino)
-            destiny_response = proxy_http_request(http_client_request, buff_size)
+            destiny_response: bytes = proxy_http_request(http_client_request, buff_size)
 
             # Acá se debe filtrar el contenido según el proxy usando proxy_content_filter()
-
             
             # Retornamos el response filtrado al cliente
+            filtered_server_response = proxy_content_filter(destiny_response, "filtro.json")
+            new_socket.send(filtered_server_response)
+
+        new_socket.close()
             
 
 
