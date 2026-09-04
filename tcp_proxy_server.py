@@ -4,9 +4,9 @@ import os
 from dotenv import load_dotenv
 import json
 
-def receive_client_request(connection_socket: socket, buff_size: int) -> HttpContent: 
+def receive_and_parse_full_message(connection_socket: socket, buff_size: int) -> HttpContent:
     """Recibe la solicitud HTTP cruda enviada por el cliente y la convierte a un objeto estructurado.
-
+    
     Args:
         connection_socket (socket.socket): Socket TCP activo conectado al cliente.
         buff_size (int): Tamaño del buffer de recepción en bytes.
@@ -14,16 +14,28 @@ def receive_client_request(connection_socket: socket, buff_size: int) -> HttpCon
     Returns:
         HttpContent: Objeto con la información de la petición HTTP (método, headers, body, etc.).
     """
+    http_message: bytes = connection_socket.recv(buff_size)
 
-    # Recibimos el request HTTP del cliente
-    http_request: bytes = connection_socket.recv(buff_size)
+    # Aseguramos que todos los bytes del HEAD fueron recibidos
+    while b"\r\n\r\n" not in http_message:
+        print("El HEAD no está completo. Volviendo a ejecutar recv()")
+        http_message += connection_socket.recv(buff_size)
+    print("El HEAD fue recibido completamente")
 
-    # Pasamos el request a la estrutura creada
-    request_parse: HttpContent = parse_HTTP_message(http_request)
+    http_struct: HttpContent = parse_HTTP_message(http_message)
 
-    return request_parse
+    if "Content-Length" in http_struct.header:
+        # Aseguramos que todos los bytes del BODY fueron recibidos
+        while len(http_struct.body) < int(http_struct.header["Content-Length"]):
+            print("El BODY no está completo. Volviendo a ejecutar recv()")
+            http_struct.body += connection_socket.recv(buff_size)
 
-def proxy_http_request(request_parsed: HttpContent, buff_size: int) -> bytes:
+    print("El HEAD fue recibido completamente")
+
+    return http_struct
+
+        
+def proxy_http_request(http_struct: HttpContent, buff_size: int) -> bytes:
     """Se conecta al servidor web de destino, reenvía la petición del cliente y obtiene su respuesta.
 
     Args:
@@ -34,29 +46,32 @@ def proxy_http_request(request_parsed: HttpContent, buff_size: int) -> bytes:
         bytes: Respuesta HTTP cruda en bytes enviada por el servidor de destino.
     """
 
-
-    # Obtenemos la dirección a la que se busca conectar
-    request_adress: str = request_parsed.header.get('Host').lstrip()
-    ip: str = request_adress.split(":")[0]
+    # Obtenemos la dirección a la que se busca conectar el cliente
+    client_request_address: str = http_struct.header["Host"].lstrip()
+    ip_to_connect: str = client_request_address.split(":")[0]
+    destination_address: tuple = (ip_to_connect, 80)
 
     # Creamos un nuevo socket para la conexión al destino
-    new_socket_destiny = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    socket_for_destination = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     # Establecemos conexión con el servidor
-    destiny_server_adress: tuple = (ip, 80)
-    new_socket_destiny.connect(destiny_server_adress)
+    socket_for_destination.connect(destination_address)
 
-    # Enviamos la solicitud
-    request_parsed.header["X-ElQuePregunta"] = "Jaime Sepulveda"
-    proxy_to_destiny_request: bytes = create_HTTP_message(request_parsed)
-    new_socket_destiny.send(proxy_to_destiny_request)
+    # Enviamos la solicitud al servidor de destino
+    http_struct.header["X-ElQuePregunta"] = "Jaime Sepulveda"
+    http_message_to_destination: bytes = create_HTTP_message(http_struct)
+    socket_for_destination.send(http_message_to_destination)
 
-    # Esperamos la respuesta
-    destiny_response: bytes = new_socket_destiny.recv(buff_size)
+    # Esperamos la respuesta completa del servidor usando nuestra estructura de datos
+    http_struct_from_server: HttpContent = receive_and_parse_full_message(socket_for_destination, buff_size)
 
-    new_socket_destiny.close()
+    # Convertimos la estructura a bytes
+    http_message_from_server: bytes = create_HTTP_message(http_struct_from_server)
 
-    return destiny_response
+    # Cerramos la conexión proxy - servidor
+    socket_for_destination.close()
+
+    return http_message_from_server
 
 def is_forbidden_adress(http_request: HttpContent, json_file: str) -> bool:
     """Evalúa si el dominio solicitado por el cliente se encuentra en la lista negra del JSON.
@@ -166,7 +181,7 @@ def proxy_content_filter(server_response: bytes, json_file: str) -> bytes:
 if __name__ == "__main__":
 
     # Defino el tamaño de buffer 
-    buff_size = 1024
+    buff_size = 64
 
     # Creamos el socket no orientado a conexion
     server_host: str = os.getenv('SERVER_HOST', 'localhost')
@@ -192,37 +207,25 @@ if __name__ == "__main__":
 
         #http_response = receive_http_request(new_socket, buff_size)
 
-        # Recibimos la request del cliente
-        http_client_request: HttpContent = receive_client_request(new_socket, buff_size)
+        # Recibimos la request del cliente. Se asume que es de tipo Request.
+        http_client_request: HttpContent = receive_and_parse_full_message(new_socket, buff_size)
 
         if http_client_request.type.method == "CONNECT":
             new_socket.close()
             continue
 
+        elif "MaomaoTheCat.png" in http_client_request.type.route:
+            print("Usuario pide la imagen MaomaoTheCat.png al servidor")
+            http_response_encoded: bytes = create_forbidden_image_response()
+            new_socket.send(http_response_encoded)
+            print("Proxy envía la imagen MaomaoTheCat.png al usuario")
+
         # Revisamos que no sea una página prohibida
         elif is_forbidden_adress(http_client_request, 'filtro.json'):
             print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
             print("Proxy encontró dominio prohibido")
-
-            http_response_encoded = proxy_adress_filter()
+            http_response_encoded: bytes = proxy_adress_filter()
             new_socket.send(http_response_encoded)
-
-            max_attempts_to_request_the_image: int = 10
-            i = 0
-            while i < max_attempts_to_request_the_image:
-                http_client_request = receive_client_request(new_socket, buff_size)
-
-                print(http_client_request.type.route)
-        
-                if "MaomaoTheCat.png" in http_client_request.type.route:
-
-                    print("Usuario pide la imagen MaomaoTheCat.png al servidor")
-                    http_response_encoded = create_forbidden_image_response()
-                    new_socket.send(http_response_encoded)
-                    print("Proxy envía la imagen MaomaoTheCat.png al usuario")
-                    break
-
-                i += 1
 
         else:
             print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
