@@ -5,7 +5,10 @@ from dotenv import load_dotenv
 import json
 
 def receive_and_parse_full_message(connection_socket: socket, buff_size: int) -> HttpContent:
-    """Recibe la solicitud HTTP cruda enviada por el cliente y la convierte a un objeto estructurado.
+    """Utiliza un socket para recibir un mensaje HTTP crudo y lo almacena en una estructura.
+
+    El mensaje es recibido completamente incluso si 'buff_size' es menor que el largo del
+    HEAD o BODY del mensaje.
     
     Args:
         connection_socket (socket.socket): Socket TCP activo conectado al cliente.
@@ -18,36 +21,31 @@ def receive_and_parse_full_message(connection_socket: socket, buff_size: int) ->
 
     # Aseguramos que todos los bytes del HEAD fueron recibidos
     while b"\r\n\r\n" not in http_message:
-        print("El HEAD no está completo. Volviendo a ejecutar recv()")
         http_message += connection_socket.recv(buff_size)
-    print("El HEAD fue recibido completamente")
 
     http_struct: HttpContent = parse_HTTP_message(http_message)
 
-    if "Content-Length" in http_struct.header:
+    if "Content-Length" in http_struct.head:
         # Aseguramos que todos los bytes del BODY fueron recibidos
-        while len(http_struct.body) < int(http_struct.header["Content-Length"]):
-            print("El BODY no está completo. Volviendo a ejecutar recv()")
+        while len(http_struct.body) < int(http_struct.head["Content-Length"]):
             http_struct.body += connection_socket.recv(buff_size)
-
-    print("El HEAD fue recibido completamente")
 
     return http_struct
 
         
-def proxy_http_request(http_struct: HttpContent, buff_size: int) -> bytes:
-    """Se conecta al servidor web de destino, reenvía la petición del cliente y obtiene su respuesta.
+def proxy_http_request(http_struct: HttpContent, buff_size: int) -> HttpContent:
+    """Se conecta al servidor web de destino, reenvía la petición del cliente y parsea su respuesta.
 
     Args:
-        request_parsed (HttpContent): Petición del cliente parseada en objeto HttpContent.
+        http_struct (HttpContent): Petición del cliente parseada en objeto HttpContent.
         buff_size (int): Tamaño del búfer para recibir la respuesta remota.
 
     Returns:
-        bytes: Respuesta HTTP cruda en bytes enviada por el servidor de destino.
+        HttpContent: Objeto con la información de la respuesta enviada por el servidor de destino.
     """
 
     # Obtenemos la dirección a la que se busca conectar el cliente
-    client_request_address: str = http_struct.header["Host"].lstrip()
+    client_request_address: str = http_struct.head["Host"].lstrip()
     ip_to_connect: str = client_request_address.split(":")[0]
     destination_address: tuple = (ip_to_connect, 80)
 
@@ -58,62 +56,54 @@ def proxy_http_request(http_struct: HttpContent, buff_size: int) -> bytes:
     socket_for_destination.connect(destination_address)
 
     # Enviamos la solicitud al servidor de destino
-    http_struct.header["X-ElQuePregunta"] = "Jaime Sepulveda"
+    http_struct.head["X-ElQuePregunta"] = "Jaime Sepulveda"
     http_message_to_destination: bytes = create_HTTP_message(http_struct)
     socket_for_destination.send(http_message_to_destination)
 
-    # Esperamos la respuesta completa del servidor usando nuestra estructura de datos
+    # Esperamos la respuesta completa del servidor y la almacenamos en nuestra estructura de datos
     http_struct_from_server: HttpContent = receive_and_parse_full_message(socket_for_destination, buff_size)
-
-    # Convertimos la estructura a bytes
-    http_message_from_server: bytes = create_HTTP_message(http_struct_from_server)
 
     # Cerramos la conexión proxy - servidor
     socket_for_destination.close()
 
-    return http_message_from_server
+    return http_struct_from_server
 
-def is_forbidden_adress(http_request: HttpContent, json_file: str) -> bool:
-    """Evalúa si el dominio solicitado por el cliente se encuentra en la lista negra del JSON.
+def is_forbidden_adress(http_client_request: HttpContent, json_file: str) -> bool:
+    """Evalúa si la dirección solicitada por el cliente se encuentra en la lista negra del JSON.
 
     Args:
-        http_request (HttpContent): Petición HTTP del cliente parseada.
+        http_client_request (HttpContent): Petición HTTP del cliente parseada.
         json_file (str): Ruta al archivo JSON de configuración ("filtro.json").
 
     Returns:
-        bool: True si el dominio está bloqueado; False en caso contrario.
+        bool: True si la dirección está bloqueada; False en caso contrario.
     """
     
     # Abrimos el archivo del filtro
     with open(json_file) as file:
         data = json.load(file)
 
-        # Obtenemos del JSON la lista de dominios prohibidos
-        filtered_adresses: list = data.get('blocked')
-
-        # Si ese Host request está dentro de la lista de los dominios prohibidos, entonces retorna True
-        # Si no, retorna False
-        for blocked_adress in filtered_adresses:
-            if blocked_adress in http_request.type.route:
+        # Revisamos si la dirección del request está dentro de la lista de direcciones prohibidas
+        for blocked_address in data["blocked"]:
+            if blocked_address in http_client_request.type.route:
                 return True
-        return False
+            
+    return False
 
 
-def proxy_adress_filter() -> bytes:
-    """Construye una respuesta HTTP 403 Forbidden personalizada con un cuerpo HTML e imagen indicando el bloqueo.
+def create_forbidden_page_response(version: float = 1.1) -> bytes:
+    """Construye una respuesta HTTP 403 Forbidden personalizada con un cuerpo HTML indicando el bloqueo.
 
     Args:
         version (float, optional): Versión del protocolo HTTP a responder. Por defecto 1.1.
 
     Returns:
-        (bytes): Respuesta HTTP 403 completa en bytes lista para ser enviada al cliente.
+        bytes: Respuesta HTTP 403 completa en bytes lista para ser enviada al cliente.
     """
-
-    # Creamos la respuesta HTTP
-
-    response_HTTP_server: ResponseHttp = ResponseHttp(403, "Forbidden")
-    version: float = 1.1
-    header: dict[str, str] = {'Content-Type': 'text/html; charset=UTF-8'}
+    # Preparamos la respuesta con la información de la página bloqueada
+    http_response_status: ResponseHttp = ResponseHttp(403, "Forbidden")
+    version: float = version
+    head: dict[str, str] = {'Content-Type': 'text/html; charset=UTF-8'}
     body: bytes = (b"""
     <html>
         <head>
@@ -125,118 +115,122 @@ def proxy_adress_filter() -> bytes:
         </body>
     </html>
     """)
-    header['Content-Length'] = len(body)
+    head['Content-Length'] = len(body)
 
-    http_response_struct: HttpContent = HttpContent(response_HTTP_server, version, header, body=body)
+    # Creamos la estructura de datos con toda la información y la convertimos a bytes
+    http_struct: HttpContent = HttpContent(http_response_status, version, head, body=body)
+    http_message_to_client: bytes = create_HTTP_message(http_struct)
 
-    http_response_encoded: bytes = create_HTTP_message(http_response_struct)
+    return http_message_to_client
 
-    return http_response_encoded
+def create_forbidden_image_response(version: float = 1.1) -> bytes:
+    """Construye una respuesta HTTP 403 Forbidden con la imagen del gato Maomao de The Apothecary Diaries.
+    
+    Args:
+        version (float, optional): Versión del protocolo HTTP a responder. Por defecto 1.1.
 
-def create_forbidden_image_response() -> bytes:
-
-    response_HTTP_server: ResponseHttp = ResponseHttp(403, "Forbidden")
+    Returns:
+        bytes: Respuesta HTTP 403 completa en bytes lista para ser enviada al cliente.
+    """
+    # Preparamos la respuesta con la información de la imagen
+    http_response_status: ResponseHttp = ResponseHttp(403, "Forbidden")
     version: float = 1.1
-    header: dict[str, str] = {'Content-Type': 'image/png'}
-
+    head: dict[str, str] = {'Content-Type': 'image/png'}
     with open("MaomaoTheCat.png", "rb") as file:
         body: bytes = file.read()
+    head['Content-Length'] = len(body)
 
-    header['Content-Length'] = len(body)
-
-    http_response_struct: HttpContent = HttpContent(response_HTTP_server, version, header, body=body)
-    http_response_encoded: bytes = create_HTTP_message(http_response_struct)
-    return http_response_encoded
+    # Creamos la estructura de datos con toda la información y la convertimos a bytes
+    http_struct: HttpContent = HttpContent(http_response_status, version, head, body=body)
+    http_message_to_client: bytes = create_HTTP_message(http_struct)
+    return http_message_to_client
     
 
-def proxy_content_filter(server_response: bytes, json_file: str) -> bytes:
-    """Filtra el cuerpo de la respuesta HTTP sustituyendo palabras prohibidas según el mapa de reemplazos del JSON.
+def replace_forbidden_words(http_struct: HttpContent, json_file: str) -> HttpContent:
+    """Filtra el cuerpo de un mensaje http sustituyendo palabras prohibidas según los contenidos del JSON.
 
     Args:
-        destiny_response (bytes): Respuesta cruda obtenida del servidor web remoto.
+        http_struct (HttpContent): Objeto con la información de un mensaje http.
         json_file (str): Ruta al archivo JSON con el diccionario de censura ("filtro.json").
 
     Returns:
-        (bytes): Respuesta HTTP modificada y recompilada en bytes para entregar al cliente.
+        (HttpContent): Objeto con la información del mensaje HTTP pero con las palabras prohíbidas sustituídas.
     """
-
-    http_server_response: HttpContent = parse_HTTP_message(server_response)
 
     # Abrimos el archivo del filtro
     with open(json_file) as file:
         data = json.load(file)
 
+    # Reemplazamos las palabras del body
     forbidden_words: list[dict[str, str]] = data["forbidden_words"]
+    for pair in forbidden_words:
+        for forbidden_word, new_word in pair.items():
+            http_struct.body = http_struct.body.replace(bytes(forbidden_word, "UTF-8"), bytes(new_word, "UTF-8"))
 
-    for dic in forbidden_words:
-        for forbidden_word, new_word in dic.items():
-            http_server_response.body = http_server_response.body.replace(bytes(forbidden_word, "UTF-8"), bytes(new_word, "UTF-8"))
+    # Actualizamos el largo del body
+    http_struct.head["Content-Length"] = len(http_struct.body)
 
-    http_server_response.header["Content-Length"] = len(http_server_response.body)
-
-    filtered_server_response: bytes = create_HTTP_message(http_server_response)
-
-    return filtered_server_response
+    return http_struct
 
 if __name__ == "__main__":
 
-    # Defino el tamaño de buffer 
+    # Tamaño de los buffers del Proxy
     buff_size = 64
 
-    # Creamos el socket no orientado a conexion
-    server_host: str = os.getenv('SERVER_HOST', 'localhost')
-    server_port: int = int(os.getenv('SERVER_PORT', 8000))
+    # Anotamos la dirección del Proxy
+    proxy_ip: str = os.getenv('SERVER_HOST', 'localhost')
+    proxy_port: int = int(os.getenv('SERVER_PORT', 8000))
+    proxy_address: tuple = (proxy_ip, proxy_port)
+    print(f"La ip del servidor es {proxy_ip}")
+    print(f"El puerto del servidor es {proxy_port}")
 
-    print(f"El host del servidor es {server_host}")
-    print(f"El puerto del servidor es {server_port}")
+    # Creamos el socket orientado a conexion
+    print("Creando socket del servidor")
+    proxy_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
-    server_socket_adress: tuple = (server_host, server_port)
-
-    print('Creando socket del servidor')
-
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM) # Socket orientado a conexión
-
-    server_socket.bind(server_socket_adress)
-    server_socket.listen(3)
+    proxy_socket.bind(proxy_address)
+    proxy_socket.listen(3)
 
     print("... Esperando clientes")
     # Dejamos el server prendido
     
     while True:
-        new_socket, new_socket_adress = server_socket.accept()
-
-        #http_response = receive_http_request(new_socket, buff_size)
+        new_socket, new_socket_address = proxy_socket.accept()
 
         # Recibimos la request del cliente. Se asume que es de tipo Request.
-        http_client_request: HttpContent = receive_and_parse_full_message(new_socket, buff_size)
+        http_struct_from_client: HttpContent = receive_and_parse_full_message(new_socket, buff_size)
 
-        if http_client_request.type.method == "CONNECT":
+        # Si es del tipo CONNECT, la ignoramos ya que es una petición externa que usa HTTPS
+        if http_struct_from_client.type.method == "CONNECT":
             new_socket.close()
             continue
 
-        elif "MaomaoTheCat.png" in http_client_request.type.route:
+        print(f"Nueva {http_struct_from_client.type.method} request a {http_struct_from_client.type.method}")
+
+        # Si el cliente está pidiendo la imagen para construir el HTML de la página bloqueada
+        if "MaomaoTheCat.png" in http_struct_from_client.type.route:
             print("Usuario pide la imagen MaomaoTheCat.png al servidor")
-            http_response_encoded: bytes = create_forbidden_image_response()
-            new_socket.send(http_response_encoded)
+            http_message: bytes = create_forbidden_image_response()
+            new_socket.send(http_message)
             print("Proxy envía la imagen MaomaoTheCat.png al usuario")
 
-        # Revisamos que no sea una página prohibida
-        elif is_forbidden_adress(http_client_request, 'filtro.json'):
-            print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
-            print("Proxy encontró dominio prohibido")
-            http_response_encoded: bytes = proxy_adress_filter()
-            new_socket.send(http_response_encoded)
+        # Revisamos si es una página prohibida
+        elif is_forbidden_adress(http_struct_from_client, 'filtro.json'):
+            print(f"Proxy recibió una dirección prohibida: {http_struct_from_client.type.method}")
+            http_message: bytes = create_forbidden_page_response()
+            new_socket.send(http_message)
+            print("Proxy envía el HTML de la página bloqueada")
 
         else:
-            print(f"Nueva {http_client_request.type.method} Request de: {http_client_request.header.get('X-ElQuePregunta')} a {http_client_request.header.get('Host')}")
-            print("Proxy no encontró dominio prohibido, pero hay que filtrar las palabras")
-            # Ahora pasamos su request al Host (dirección de destino)
-            destiny_response: bytes = proxy_http_request(http_client_request, buff_size)
+            print("Proxy no recibió una dirección prohibida. Ahora se van a filtrar las palabras")
+            # Ahora enviamos la request del cliente al servidor de destino y recibimos la respuesta
+            http_struct_from_server: HttpContent = proxy_http_request(http_struct_from_client, buff_size)
 
-            # Acá se debe filtrar el contenido según el proxy usando proxy_content_filter()
-            
-            # Retornamos el response filtrado al cliente
-            filtered_server_response = proxy_content_filter(destiny_response, "filtro.json")
+            # Reemplazamos las palabras prohíbidas
+            filtered_http_struct: HttpContent = replace_forbidden_words(http_struct_from_server, "filtro.json")
+
+            # Retornamos la respuesta filtrada al cliente
+            filtered_server_response: bytes = create_HTTP_message(filtered_http_struct)
             new_socket.send(filtered_server_response)
 
         new_socket.close()

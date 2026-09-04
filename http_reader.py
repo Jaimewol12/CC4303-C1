@@ -18,7 +18,7 @@ class RequestHttp:
 
 
 class ResponseHttp:
-    """Representa la línea de estado (Status-Line) de una respuesta HTTP.
+    """Representa la línea de estado (Start-Line) de una respuesta HTTP.
 
     Attributes:
         code (int): Código de estado numérico de la respuesta (e.g., 200, 404, 403).
@@ -41,22 +41,22 @@ class HttpContent:
     Attributes:
         type (RequestHttp | ResponseHttp): Instancia que define si es una petición o respuesta.
         version (float): Versión del protocolo HTTP utilizada (e.g., 1.1).
-        header (dict[str, str]): Diccionario clave-valor con los encabezados HTTP.
+        head (dict[str, str]): Diccionario clave-valor con los encabezados HTTP.
         body (bytes | str): Carga útil o cuerpo del mensaje HTTP.
     """
 
-    def __init__(self, type: RequestHttp|ResponseHttp, version: float, header: dict[str, str], body: bytes):
+    def __init__(self, type: RequestHttp|ResponseHttp, version: float, head: dict[str, str], body: bytes):
         """Inicializa la estructura global del mensaje HTTP.
 
         Args:
             type (RequestHttp | ResponseHttp): Objeto RequestHttp o ResponseHttp.
             version (float): Versión del protocolo HTTP.
-            header (dict[str, str]): Diccionario con las cabeceras HTTP.
+            head (dict[str, str]): Diccionario con las cabeceras HTTP.
             body (bytes | str): Contenido o cuerpo del mensaje.
         """
         self.type: RequestHttp|ResponseHttp = type
         self.version: float = version
-        self.header: dict[str, str] = header
+        self.head: dict[str, str] = head
         self.body: bytes = body
 
 def parse_HTTP_message(http_message: bytes) -> HttpContent:
@@ -71,13 +71,13 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
 
     head_body_separator_idx: int = http_message.find(b"\r\n\r\n")
 
-    header_section: str = http_message[:head_body_separator_idx].decode()
+    head_section: str = http_message[:head_body_separator_idx].decode()
     body: bytes = http_message[head_body_separator_idx + 4:]
 
     try:
-        content: list[str] = header_section.splitlines()
+        content: list[str] = head_section.splitlines()
         values_first_line: list[str] = content[0].split()
-        header: dict[str, str] = {}
+        head: dict[str, str] = {}
     except:
         print(content, "\n", http_message)
 
@@ -85,7 +85,7 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
         idx: int = line.find(":")
         key: str = line[:idx]
         value: str = line[idx + 1:].removesuffix("\r\n")
-        header[key] = value
+        head[key] = value
 
     # Caso Response
     if values_first_line[0][:4] == "HTTP":
@@ -93,7 +93,7 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
         code: int = values_first_line[1]
         status: str = values_first_line[2]
         http_response = ResponseHttp(code, status)
-        http_structured = HttpContent(http_response, version, header, body)
+        http_structured = HttpContent(http_response, version, head, body)
 
     # Caso Request
     else:
@@ -101,7 +101,7 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
         method: str = values_first_line[0]
         route: str = values_first_line[1]
         http_request = RequestHttp(method, route)
-        http_structured = HttpContent(http_request, version, header, body)
+        http_structured = HttpContent(http_request, version, head, body)
 
     return http_structured
     
@@ -120,8 +120,8 @@ def create_HTTP_message(http_structure: HttpContent) -> bytes:
     elif isinstance(http_structure.type, ResponseHttp):
         http_message = f"HTTP/{http_structure.version} {http_structure.type.code} {http_structure.type.status}\r\n"
 
-    for header_key, header_value in http_structure.header.items():
-        http_message += f"{header_key}:{header_value}\r\n"
+    for header, value in http_structure.head.items():
+        http_message += f"{header}:{value}\r\n"
 
     http_message += f"\r\n"
     http_message_codificado = http_message.encode() + http_structure.body
