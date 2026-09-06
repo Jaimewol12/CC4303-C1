@@ -1,7 +1,5 @@
 import socket
-from dnslib import DNSRecord
-from dnslib.dns import CLASS, QTYPE
-import dnslib
+from dnslib.dns import QTYPE
 import os
 from dns_reader import *
 from dns_cache import *
@@ -126,7 +124,14 @@ if __name__ == "__main__":
     dns_cache = DNSCache()
 
     # Creamos el socket no orientado a conexión (UDP)
-    server_host: str = os.getenv('SERVER_HOST', '192.168.1.87')
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # Cargar variables de entorno desde el archivo .env
+    except ImportError:
+        print("(info) Librería 'python-dotenv' no instalada. Se usarán valores por defecto de server_host y server_port.")
+
+    server_host: str = os.getenv('SERVER_HOST', 'localhost')
     server_port: int = int(os.getenv('SERVER_PORT', 8000))
 
     dns_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
