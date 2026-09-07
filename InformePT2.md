@@ -4,7 +4,7 @@ Integrantes: César Barrueto, Jaime Sepúlveda.
 Fecha: 07/09/2026.
 Curso: Redes (CC4303-1).
 Profesora: Ivana Bachmann.
-Auxilar: Iván Ferreria
+Auxiliar: Julián Ferreira
 
 Enlace de github: https://github.com/Jaimewol12/CC4303-C1.
 
