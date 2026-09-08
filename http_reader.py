@@ -3,7 +3,7 @@ class RequestHttp:
 
     Attributes:
         method (str): Método HTTP utilizado en la petición (e.g., 'GET', 'POST').
-        route (str): Ruta o URI del recurso solicitado en el servidor (e.g., '/index.html').
+        route (str): Ruta o URL del recurso solicitado en el servidor (e.g., '/index.html').
     """
 
     def __init__(self, method: str, route: str):
@@ -18,7 +18,7 @@ class RequestHttp:
 
 
 class ResponseHttp:
-    """Representa la línea de estado (Status-Line) de una respuesta HTTP.
+    """Representa la línea de estado (Start-Line) de una respuesta HTTP.
 
     Attributes:
         code (int): Código de estado numérico de la respuesta (e.g., 200, 404, 403).
@@ -39,25 +39,25 @@ class HttpContent:
     """Estructura contenedora que abstrae un mensaje HTTP completo (Request o Response).
 
     Attributes:
-        type (Union[RequestHttp, ResponseHttp]): Instancia que define si es una petición o respuesta.
+        type (RequestHttp | ResponseHttp): Instancia que define si es una petición o respuesta.
         version (float): Versión del protocolo HTTP utilizada (e.g., 1.1).
-        header (dict[str, str]): Diccionario clave-valor con los encabezados HTTP.
-        body (Union[bytes, str]): Carga útil o cuerpo del mensaje HTTP.
+        head (dict[str, str]): Diccionario clave-valor con los encabezados HTTP.
+        body (bytes): Carga útil o cuerpo del mensaje HTTP.
     """
 
-    def __init__(self, type: RequestHttp|ResponseHttp, version: float, header: dict[str, str], body: bytes):
+    def __init__(self, type: RequestHttp|ResponseHttp, version: float, head: dict[str, str], body: bytes):
         """Inicializa la estructura global del mensaje HTTP.
 
         Args:
-            type (Union[RequestHttp, ResponseHttp]): Objeto RequestHttp o ResponseHttp.
+            type (RequestHttp | ResponseHttp): Objeto RequestHttp o ResponseHttp.
             version (float): Versión del protocolo HTTP.
-            header (dict[str, str]): Diccionario con las cabeceras HTTP.
-            body (Union[bytes, str]): Contenido o cuerpo del mensaje.
+            head (dict[str, str]): Diccionario con las cabeceras HTTP.
+            body (bytes | str): Contenido o cuerpo del mensaje.
         """
         self.type: RequestHttp|ResponseHttp = type
         self.version: float = version
-        self.header: dict[str, str] = header
-        self.body: bytes = body       
+        self.head: dict[str, str] = head
+        self.body: bytes = body
 
 def parse_HTTP_message(http_message: bytes) -> HttpContent:
     """Analiza un flujo de bytes de un mensaje HTTP crudo y lo transforma en un objeto HttpContent.
@@ -71,18 +71,18 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
 
     head_body_separator_idx: int = http_message.find(b"\r\n\r\n")
 
-    header_section: str = http_message[:head_body_separator_idx].decode()
+    head_section: str = http_message[:head_body_separator_idx].decode()
     body: bytes = http_message[head_body_separator_idx + 4:]
 
-    content: list[str] = header_section.splitlines()
+    content: list[str] = head_section.splitlines()
     values_first_line: list[str] = content[0].split()
-    header: dict[str, str] = {}
+    head: dict[str, str] = {}
 
     for line in content[1:]:
         idx: int = line.find(":")
         key: str = line[:idx]
         value: str = line[idx + 1:].removesuffix("\r\n")
-        header[key] = value
+        head[key] = value
 
     # Caso Response
     if values_first_line[0][:4] == "HTTP":
@@ -90,7 +90,7 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
         code: int = values_first_line[1]
         status: str = values_first_line[2]
         http_response = ResponseHttp(code, status)
-        http_structured = HttpContent(http_response, version, header, body)
+        http_structured = HttpContent(http_response, version, head, body)
 
     # Caso Request
     else:
@@ -98,7 +98,7 @@ def parse_HTTP_message(http_message: bytes) -> HttpContent:
         method: str = values_first_line[0]
         route: str = values_first_line[1]
         http_request = RequestHttp(method, route)
-        http_structured = HttpContent(http_request, version, header, body)
+        http_structured = HttpContent(http_request, version, head, body)
 
     return http_structured
     
@@ -112,31 +112,15 @@ def create_HTTP_message(http_structure: HttpContent) -> bytes:
         bytes: Secuencia binaria formateada según el estándar del protocolo HTTP.
     """
     if isinstance(http_structure.type, RequestHttp):
-        mensaje = f"{http_structure.type.method} {http_structure.type.route} HTTP/{http_structure.version}\r\n"
+       http_message = f"{http_structure.type.method} {http_structure.type.route} HTTP/{http_structure.version}\r\n"
 
     elif isinstance(http_structure.type, ResponseHttp):
-        mensaje = f"HTTP/{http_structure.version} {http_structure.type.code} {http_structure.type.status}\r\n"
+        http_message = f"HTTP/{http_structure.version} {http_structure.type.code} {http_structure.type.status}\r\n"
 
-    for key, value in http_structure.header.items():
-        mensaje += f"{key}:{value}\r\n"
-    mensaje += f"\r\n"
-    mensaje_codificado = mensaje.encode() + http_structure.body
+    for header, value in http_structure.head.items():
+        http_message += f"{header}:{value}\r\n"
 
-    return mensaje_codificado
+    http_message += f"\r\n"
+    http_message_encoded: bytes = http_message.encode() + http_structure.body
 
-# Esto es solo para probar, lo puedes borrar si quieres
-texto = 'GET /login HTTP/1.1\r\nHost: www.ejemplo.com\r\nUser-Agent: Mozilla/5.0\r\nContent-Type:application/json\r\nContent-Length: 36\r\n\r\n{"usuario":"admin","clave":"123456"}'
-texto = texto.encode()
-
-texto_response = "HTTP/1.1 200 OK\r\nContent-Type:test/html;charset=UTF-8\r\nContent-Length:155\r\n\r\n{'Hola que tal'}"
-texto_response = texto_response.encode()
-
-http_de_texto = parse_HTTP_message(texto)
-#print(http_de_texto.type.method)
-#print(create_HTTP_message(http_de_texto))
-
-http_de_texto_response = parse_HTTP_message(texto_response)
-#print(create_HTTP_message(http_de_texto_response))
-
-#print(texto_response.decode())
-#print(texto_response == create_HTTP_message(http_de_texto_response))
+    return http_message_encoded
