@@ -211,7 +211,7 @@ if __name__ == "__main__":
             new_socket.close()
             continue
 
-        print(f"Nueva {http_struct_from_client.type.method} request a {http_struct_from_client.type.method}")
+        print(f"Nueva {http_struct_from_client.type.method} request a {http_struct_from_client.type.route}")
 
         # Si el cliente está pidiendo la imagen para construir el HTML de la página bloqueada
         if "MaomaoTheCat.png" in http_struct_from_client.type.route:
@@ -222,7 +222,7 @@ if __name__ == "__main__":
 
         # Revisamos si es una página prohibida
         elif is_forbidden_adress(http_struct_from_client, 'filtro.json'):
-            print(f"Proxy recibió una dirección prohibida: {http_struct_from_client.type.method}")
+            print(f"Proxy recibió una dirección prohibida: {http_struct_from_client.type.route}")
             http_message: bytes = create_forbidden_page_response()
             new_socket.send(http_message)
             print("Proxy envía el HTML de la página bloqueada")
