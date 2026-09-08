@@ -1,7 +1,6 @@
 import socket 
 from http_reader import *
 import os
-from dotenv import load_dotenv
 import json
 
 def receive_and_parse_full_message(connection_socket: socket, buff_size: int) -> HttpContent:
@@ -177,8 +176,15 @@ if __name__ == "__main__":
     # Tamaño de los buffers del Proxy
     buff_size = 64
 
-    # Anotamos la dirección del Proxy
-    proxy_ip: str = os.getenv('SERVER_HOST', 'localhost')
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # Cargar variables de entorno desde el archivo .env
+    except ImportError:
+        print("(info) Librería 'python-dotenv' no instalada. Se usarán valores por defecto de server_host y server_port.")
+
+    # Anotamos la dirección del Proxy, utilizando las variables de entorno, o los valores por defecto.
+
+    proxy_ip: str = os.getenv('SERVER_HOST', "localhost") # Reemplace el valor por defecto "localhost" por la IP de su maquina virtual.
     proxy_port: int = int(os.getenv('SERVER_PORT', 8000))
     proxy_address: tuple = (proxy_ip, proxy_port)
     print(f"La ip del servidor es {proxy_ip}")
@@ -234,9 +240,3 @@ if __name__ == "__main__":
             new_socket.send(filtered_server_response)
 
         new_socket.close()
-            
-
-
-
-
-
