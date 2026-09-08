@@ -1,6 +1,6 @@
 # CC4303-C1
 
-# Informe parte 1: Construcción de Proxy
+# Informe parte 1: Construcción de un Proxy
 
 Integrantes: César Barrueto, Jaime Sepúlveda
 Fecha: 07/09/2026
@@ -11,7 +11,7 @@ Enlace de github: https://github.com/Jaimewol12/CC4303-C1
 
 Disclaimer uso de IA (ChatGPT-5.6):
 - Se utilizó IA para solucionar problemas de conexión entre el navegador de Windows y la máquina virtual. Se descubrió que era necesario cambiar la configuración de red "NAT" por "Adaptador puente" en la máquina virtual.
-- ASdasd
+- También se utilizó para investigar cómo solucionar problemas de peticiones no solicitadas hechas desde Microsoft Edge y Google Chrome al proxy, o para evitar la transformación automática de "http://..." a "https://" que hacen esos navegadores. Con ayuda de la profesora, la mejor solución fue utilizar Mozilla Firefox para evitar esos problemas. Todos los experimentos de este informe fueron hechos en Mozilla Firefox.
 
 ## La estructura de datos HttpContent
 
@@ -100,7 +100,7 @@ La función create_HTTP_message es la función inversa de parse_HTTP_message.
 
 ## La función receive_and_parse_full_message(connection_socket: socket, buff_size: int)
 
-Le permite a un socket del proxy recibir un mensaje HTTP y transformarlo en una instancia de HttpContent. Esta función se asegura de recibir el mensaje completo, siempre y cuando el tamaño del buffer del socket sea mayor que el tamaño de la "start line" del mensaje HTTP. Para lograrlo, la diseñamos de la siguiente forma:
+Le permite a un socket del proxy recibir un mensaje HTTP y transformarlo en una instancia de HttpContent. Esta función se asegura de recibir el mensaje completo. Para lograrlo, la diseñamos de la siguiente forma:
 
 ### Implementación
 
@@ -221,12 +221,34 @@ Esta es la función que lee el campo "body" de una instancia de HttpContent y re
 
 ## Funcionamiento del proxy
 
-Dentro del archivo donde fue implementando el proxy, existen variables para modificar el tamaño del buffer de los sockets, y especificar la dirección (IP, puerto) del proxy.
+Dentro del archivo donde fue implementando el proxy, existen variables para modificar el tamaño del buffer de los sockets, y especificar la dirección (IP, puerto) del socket principal del proxy.
 
+Se bindea el socket principal del proxy a la dirección especificada, y luego se ejecuta un bucle while infinito para recibir cualquier petición del cliente. Al momento de detectar una petición, se utiliza la función accept() para crear un nuevo socket que se comunicará con el cliente. Posteriormente se utiliza la función receive_and_parse_full_message para recibir el mensaje HTTP completo del cliente.
+
+Para evitar problemas con peticiones externas del navegador, se descartan todos las peticiones que usen el método CONNECT (se utiliza con el protocolo https).
+
+Después se revisa a qué dirección se quiere dirigir el cliente. Si desea obtener la imagen del gato, entonces se envía el mensaje HTTP de la imagen con ayuda de la función create_forbidden_image_response. De lo contrario, se revisa si la dirección es una dirección prohibida utilizando is_forbidden_adress.
+
+Si la dirección es prohibida, entonces se debe enviar nuestro HTML construido por la función create_forbidden_page_response. Si la dirección no es prohibida, entonces se le agrega el header "X-ElQuePregunta: Jaime Sepulveda" al mensaje HTTP del cliente y se envía el servidor de destino usando proxy_http_request. Luego, la misma función proxy_http_request devuelve la respuesta completa del servidor. Solamente falta filtrar la respuesta usando replace_forbidden_words, y finalmente se envía al cliente.
 
 ## ¿Cómo ejecutar el servidor proxy?
 
+Para iniciar el proxy, es necesario definir las variables de entorno que dictan la IP y el puerto de escucha. Por defecto, el sistema utilizará la IP '_localhost_' y el puerto _8000_ si no se especifican.
 
+En su archivo .env (o modifique .env.example), debe poner lo siguiente:
+```
+SERVER_HOST= Acá pueden poner la IP de la máquina virtual donde se ejecuta el proxy
+SERVER_PORT= Acá pueden poner el puerto que necesitan (por defecto 8000)
+```
+
+De todas formas, si no se tiene el módulo dotenv (se puede instalar usando _pip install python-dotenv_), o no puede crear un archivo .env, se puede modificar la siguiente línea de código para poner la IP que se necesite.
+
+```python
+proxy_ip: str = os.getenv('SERVER_HOST','Acá pueden poner la IP que necesiten sin utilizar la librería dotenv')
+proxy_port: int = int(os.getenv('SERVER_PORT', Acá puede poner el puerto que necesiten sin utilizar la libería dotenv))
+```
+
+Finalmente basta dejar en ejecución el proxy ejecutando el archivo _tcp_proxy_server.py_ desde la máquina virtual. Luego configura su navegador para conectarse al proxy.
 
 ## Respuestas a las preguntas sobre el tamaño del buffer
 
@@ -249,6 +271,39 @@ Si la totalidad del HEAD y del BODY ha sido recibida, entonces sabemos que el me
 
 ## Pruebas
 
-### ¿Cuántos ciclos de comunicación HTTP son necesarios para mostrar una imagen en un navegador?
+### Error 403
+
+Al usar el proxy e ingresar a la página http://cc4303.bachmann.cl/secret, el navegador recibe un código de error 403 junto a un HTML con la imagen de un gato.
+
+![Foto del error 403 al entrar a una página prohibida](Error_403.png)
+
+#### ¿Cuántos ciclos de comunicación HTTP son necesarios para mostrar una imagen en un navegador?
 
 Para mostrar la imagen de la página prohibida, el navegador realiza una petición al servidor para que le envíe la imagen. Luego, el proxy intercepta la petición y crea un nuevo socket para establecer el canal de comunicación entre el navegador y el proxy. Posteriormente, el proxy envía la imagen al navegador con ayuda de la función create_forbidden_image_response. En ningún momento se abrió un canal de comunicación entre el proxy y el servidor, únicamente se utilizó un ciclo de comunicación entre el navegador y el proxy.
+
+### Modificación de palabras y filtrado de palabras
+
+En la siguiente imagen se muestran dos fotos del sitio http://cc4303.bachmann.cl/. La captura de la parte superior muestra como se ve el sitio al acceder de forma normal (sin usar el proxy). Mientras que la foto de la parte inferior muestra cómo se ve el sitio al acceder mediante el proxy. Se puede ver que al usar el proxy, aparece el nombre "Jaime Sepulveda" en la página web. Esto se logra gracias a que el proxy añade el header "X-ElQuePregunta: Jaime Sepulveda" al mensaje HTTP que viaja al servidor. Por otro lado, también se aprecia que la palabra prohibida proxy fue reemplazada por [REDACTED].
+
+![Aparece mi nombre en la página de la profesora](Proxy_añadiendo_el_header_extra.png)
+
+Un mejor ejemplo de filtrado de palabras se aprecia al acceder al sitio http://cc4303.bachmann.cl/replace. La imagen de abajo muestra dos fotos de ese sitio. En la parte superior se muestra cómo se ve el sitio web al acceder de forma normal (sin proxy), mientras que en la parte inferior se muestra la vista del sitio web usando el proxy. Se puede ver que una gran cantidad de palabras fue reemplazada.
+
+![Muestra_del_filtrado_de_palabras_del_proxy](Proxy_filtrando_palabras.png)
+
+### Experimentando con tamaños de buffer diferentes
+
+#### El buffer es de menor tamaño que el mensaje, pero es más grande que el área de headers
+
+Para observar esto, se impuso "buff_size = 256" para que el tamaño del buffer solo sea de 256 bytes. Posteriormente se ingresó al sitio http://cc4303.bachmann.cl/replace que tiene cerca de 1000 caracteres, y por ende, el mensaje HTTP recibido por el servidor ocupa más de 1000 bytes. El resultado fue idéntico al visto en la imagen superior. Nuestro proxy puede recibir utilizar buffers de menor que tamaño que el mensaje HTTP recibido.
+
+#### El buffer es de menor tamaño que el área de headers, pero es más grande que la "start line"
+
+Para observar esto, se midió el tamaño de la "start line" con ayuda de un print en la función parse_HTTP_message.
+
+- El largo de la "start line" que se genera al ingresar al sitio http://cc4303.bachmann.cl/replace es de 46 bytes.
+- El largo de la "start line" que se genera al ingresar al sitio http://cc4303.bachmann.cl es de 41 bytes.
+- El largo de la "start line" que se genera al ingresar al sitio http://cc4303.bachmann.cl/secret es de 45 bytes.
+- El largo de la "start line" que se genera al ingresar al sitio http://cc4303.bachmann.cl/MaomaoTheCat.png es de 55 bytes.
+
+Por lo tanto se impuso "buff_size = 60" y se ingresó a todas las páginas mencionadas. En ninguna de ellas hubo alguna diferencia con las imágenes anteriores. Toda la información carga correctamente.
