@@ -1,7 +1,6 @@
 import socket 
 from http_reader import *
 import os
-from dotenv import load_dotenv
 import json
 
 def receive_client_request(connection_socket: socket, buff_size: int) -> HttpContent: 
@@ -111,6 +110,12 @@ if __name__ == "__main__":
     buff_size = 1024
 
     # Creamos el socket no orientado a conexion
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()  # Cargar variables de entorno desde el archivo .env
+    except ImportError:
+        print("(info) Librería 'python-dotenv' no instalada. Se usarán valores por defecto de server_host y server_port.")
+
     server_host: str = os.getenv('SERVER_HOST', 'localhost')
     server_port: int = int(os.getenv('SERVER_PORT', 5000))
 
