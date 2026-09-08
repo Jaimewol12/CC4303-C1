@@ -231,6 +231,17 @@ Después se revisa a qué dirección se quiere dirigir el cliente. Si desea obte
 
 Si la dirección es prohibida, entonces se debe enviar nuestro HTML construido por la función create_forbidden_page_response. Si la dirección no es prohibida, entonces se le agrega el header "X-ElQuePregunta: Jaime Sepulveda" al mensaje HTTP del cliente y se envía el servidor de destino usando proxy_http_request. Luego, la misma función proxy_http_request devuelve la respuesta completa del servidor. Solamente falta filtrar la respuesta usando replace_forbidden_words, y finalmente se envía al cliente.
 
+## Diagrama de flujo del proxy
+
+Explicado en palabras, el proxy necesita a lo más tres sockets.
+
+1. El socket principal es que el escucha las peticiones de cualquier cliente que quiera conectarse al proxy, por ejemplo, un navegador.
+2. Cuando el proxy recibe una petición, se crea un socket específico para comunicarse con el cliente (socket cliente-proxy) y recibir el mensaje HTTP del cliente.
+3. El proxy crea un tercer socket (proxy-servidor) para comunicarse con el servidor de destino y enviarle el mensaje HTTP.
+4. El socket proxy-servidor recibe el mensaje de respuesta del servidor. Se cierra ese socket.
+5. El proxy le envia el mensaje de respuesta del servidor al cliente por medio del socket cliente-proxy.
+6. Se termina el proceso y se cierra el socket cliente-proxy.
+
 ## ¿Cómo ejecutar el servidor proxy?
 
 Para iniciar el proxy, es necesario definir las variables de entorno que dictan la IP y el puerto de escucha. Por defecto, el sistema utilizará la IP '_localhost_' y el puerto _8000_ si no se especifican.
